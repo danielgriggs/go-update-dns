@@ -55,6 +55,7 @@ func main() {
 	default:
 		log.Printf("Unknown action %v", desiredstate.Action)
 		compareState(prestate, desiredstate)
+		log.Println(prestate.StringUpdate())
 	}
 }
 

@@ -7,19 +7,24 @@ import (
 )
 
 type DnsHost struct {
-	HostName    string
-	finalName   string
-	targetIPs   []net.IP
-	Resolveable bool
-	cnameChain  []string
-	cnameDepth  uint8
-	cnameErr    string
+	HostName     string
+	finalName    string
+	targetIPs    []net.IP
+	Resolveable  bool
+	cnameChain   []string
+	cnameDepth   uint8
+	cnameErr     string
+	updateAble   bool
+	updateHost   string
+	updateLabel  string
+	updateDomain string
 }
 
 func DiscoverHost(host string) (DnsHost, error) {
 	var h DnsHost
 	h.HostName = host
-	h.getRecords()
+	h.resolveRecords()
+	h.getUpdateTarget()
 
 	return h, nil
 }
@@ -40,19 +45,34 @@ func (h *DnsHost) HasIP(ip_str string) bool {
 
 func (h *DnsHost) getUpdateTarget() (*DnsHost, error) {
 
-	// Do SOA query on zone
-	// Check auth section.
-	// Check answer for zone name
-	//   If found set zone name
-	// get MNAME
-	//   If found set MNAME (create new dns client?)
-	// Requery MNAME for hostname
-	//   If fails, bail on updates.
-	//    Otherwise set, updatable to true.
+	res := NewResolver()
+	db, err := res.GetDomainBase(h.HostName)
+	if err != nil {
+		// fmt.Println("Error getting update target")
+		return nil, err
+	}
+	// fmt.Println("Success! in getting basedomain")
+	h.updateAble = db.updateble
+	h.updateHost = db.mname
+	h.updateLabel = db.label
+	h.updateDomain = db.zone
 	return h, nil
 }
 
-func (h *DnsHost) getRecords() (*DnsHost, error) {
+func (h *DnsHost) IsUpdateAble() bool {
+	return h.updateAble
+}
+
+func (h *DnsHost) StringUpdate() string {
+	if h.IsUpdateAble() {
+		return fmt.Sprintf("%v can be updated in zone %v via %v", h.HostName, h.updateDomain, h.updateHost)
+	} else {
+		return fmt.Sprintf("This appears no way to upate %v", h.HostName)
+	}
+
+}
+
+func (h *DnsHost) resolveRecords() (*DnsHost, error) {
 
 	if !strings.HasSuffix(h.HostName, ".") {
 		h.HostName = h.HostName + "."

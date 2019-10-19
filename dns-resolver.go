@@ -2,7 +2,9 @@ package main
 
 import (
 	"github.com/miekg/dns"
+	// "log"
 	"net"
+	"strings"
 )
 
 type DnsResolver struct {
@@ -43,6 +45,76 @@ func (r DnsResolver) GetCname(q string) (string, error) {
 			target = c.Target
 		}
 	}
+
+	return target, nil
+}
+
+type domainBase struct {
+	label     string
+	zone      string
+	mname     string
+	updateble bool
+}
+
+func (r DnsResolver) GetDomainBase(q string) (domainBase, error) {
+
+	// This could be more robust, I may change this to following the
+	// the labels back until we find the longest set of labels that
+	// produces an actual SOA, there seems to be inconsistancy from
+	// DNS servers about what they are happy to return, sometimes
+	// no authority.
+	var target domainBase
+	target.updateble = false
+	// Do SOA query on zone.
+	// Setup the question
+	m1 := new(dns.Msg)
+	m1.SetEdns0(1280, true)
+	m1.SetQuestion(dns.Fqdn(q), dns.TypeSOA)
+
+	// log.Println("Sending SOA query")
+	a1p, _, err := r.c.Exchange(m1, r.config.Servers[0]+":"+r.config.Port)
+	if err != nil {
+		return target, err
+	}
+	// log.Printf("Received RCODE of %v", a1p.Rcode)
+	if a1p.Rcode != dns.RcodeSuccess {
+		return target, nil
+	}
+
+	// Check auth section.
+	// Check answer for zone name
+	//   If found set zone name
+	// get MNAME
+	//   If found set MNAME (create new dns client?)
+	for _, k := range a1p.Ns {
+		if c, ok := k.(*dns.SOA); ok {
+			// log.Println("Received SOA in response.")
+			// log.Printf("MNAME %v, Serial %v, Zone %v", c.Ns, c.Serial, c.Hdr.Name)
+			target.zone = c.Hdr.Name
+			target.mname = c.Ns
+		}
+	}
+
+	// Requery MNAME for hostname
+	m2 := new(dns.Msg)
+	m2.RecursionDesired = false
+	m2.SetEdns0(1280, true)
+	m2.SetQuestion(dns.Fqdn(q), dns.TypeANY)
+
+	// log.Printf("Sending ANY query to %v", target.mname)
+	a2p, _, err := r.c.Exchange(m2, target.mname+":53")
+	//   If fails, bail on updates.
+	//    Otherwise set, updatable to true.
+	if err != nil {
+		// log.Println(err)
+		return target, err
+	}
+	if a2p.Rcode != dns.RcodeSuccess {
+		return target, nil
+	}
+	target.updateble = true
+
+	target.label = strings.TrimSuffix(dns.Fqdn(q), "."+target.zone)
 
 	return target, nil
 }
