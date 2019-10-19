@@ -1,10 +1,10 @@
 
-= I know
+# I know
 
 There is still a lot of work to do.
 This is a tool for me to learn Go.
 
-= ToDo
+# ToDo
 
 * Reading works
 * Needs to create a list of action to bring the current state into compliance.
