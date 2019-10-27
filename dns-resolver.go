@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/miekg/dns"
 	// "log"
+	"errors"
 	"net"
 	"strings"
 )
@@ -65,36 +66,44 @@ func (r DnsResolver) GetDomainBase(q string) (domainBase, error) {
 	// no authority.
 	var target domainBase
 	target.updateble = false
+	labels := strings.Split(dns.Fqdn(q), ".")
+	// log.Printf("Length of labels: %v\n", len(labels))
 	// Do SOA query on zone.
 	// Setup the question
-	m1 := new(dns.Msg)
-	m1.SetEdns0(1280, true)
-	m1.SetQuestion(dns.Fqdn(q), dns.TypeSOA)
 
-	// log.Println("Sending SOA query")
-	a1p, _, err := r.c.Exchange(m1, r.config.Servers[0]+":"+r.config.Port)
-	if err != nil {
-		return target, err
-	}
-	// log.Printf("Received RCODE of %v", a1p.Rcode)
-	if a1p.Rcode != dns.RcodeSuccess {
-		return target, nil
-	}
+	for i := 0; i+1 < len(labels); i++ {
 
-	// Check auth section.
-	// Check answer for zone name
-	//   If found set zone name
-	// get MNAME
-	//   If found set MNAME (create new dns client?)
-	for _, k := range a1p.Ns {
-		if c, ok := k.(*dns.SOA); ok {
-			// log.Println("Received SOA in response.")
-			// log.Printf("MNAME %v, Serial %v, Zone %v", c.Ns, c.Serial, c.Hdr.Name)
-			target.zone = c.Hdr.Name
-			target.mname = c.Ns
+		qname := strings.Join(labels[i:], ".")
+		// log.Printf("Constructioning SOA query %v\n", qname)
+		m1 := new(dns.Msg)
+		m1.SetEdns0(1280, true)
+		m1.SetQuestion(qname, dns.TypeSOA)
+		a1p, _, err := r.c.Exchange(m1, r.config.Servers[0]+":"+r.config.Port)
+		if err != nil {
+			return target, err
+		}
+		// log.Printf("Received RCODE of %v", a1p.Rcode)
+		// if a1p.Rcode != dns.RcodeSuccess {
+		//	return target, nil
+		// }
+
+		// Check answer for SOA record
+		//   If found set zone name
+		// get MNAME
+		//   If found set MNAME (create new dns client?)
+		for _, k := range a1p.Answer {
+			if c, ok := k.(*dns.SOA); ok {
+				// log.Println("Received SOA in response.")
+				// log.Printf("MNAME %v, Serial %v, Zone %v", c.Ns, c.Serial, c.Hdr.Name)
+				target.zone = c.Hdr.Name
+				target.mname = c.Ns
+				target.label = strings.Join(labels[:i], ".")
+			}
+		}
+		if target.mname != "" {
+			break
 		}
 	}
-
 	// Requery MNAME for hostname
 	m2 := new(dns.Msg)
 	m2.RecursionDesired = false
@@ -107,11 +116,12 @@ func (r DnsResolver) GetDomainBase(q string) (domainBase, error) {
 	//    Otherwise set, updatable to true.
 	if err != nil {
 		// log.Println(err)
-		return target, err
+		return target, errors.New("Error talking to MNAME " + target.mname)
 	}
 	if a2p.Rcode != dns.RcodeSuccess {
-		return target, nil
+		return target, errors.New("Error with MNAME " + target.mname + " responded with " + dns.RcodeToString[dns.RcodeSuccess])
 	}
+	// log.Printf("Listed MNAME responded with %v!\n", dns.RcodeToString[dns.RcodeSuccess])
 	target.updateble = true
 
 	target.label = strings.TrimSuffix(dns.Fqdn(q), "."+target.zone)

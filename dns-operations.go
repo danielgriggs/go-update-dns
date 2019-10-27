@@ -65,7 +65,7 @@ func (h *DnsHost) IsUpdateAble() bool {
 
 func (h *DnsHost) StringUpdate() string {
 	if h.IsUpdateAble() {
-		return fmt.Sprintf("%v can be updated in zone %v via %v", h.HostName, h.updateDomain, h.updateHost)
+		return fmt.Sprintf("%v can be updated in zone %v via %v", h.updateLabel, h.updateDomain, h.updateHost)
 	} else {
 		return fmt.Sprintf("This appears no way to upate %v", h.HostName)
 	}
